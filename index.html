@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Просмотр 3D-модели</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #viewer { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+
+  <!-- Подключаем библиотеку для отображения 3D -->
+  <script type="module">
+    import { Viewer } from 'https://cdn.jsdelivr.net/npm/@cloudimage/3d-view@1.2.0/+esm';
+
+    const viewer = new Viewer({
+      container: document.getElementById('viewer'),
+      // Укажите прямые ссылки на ваши файлы:
+      src: 'https://nekujay.github.io/3d/Проект1%20-%203D%20вид%20-%20%7B3D%7D.obj',
+      mtlSrc: 'https://nekujay.github.io/3d/Проект1%20-%203D%20вид%20-%20%7B3D%7D.mtl',
+      autoRotate: true,
+      shadows: true
+    });
+  </script>
+</body>
+</html>
