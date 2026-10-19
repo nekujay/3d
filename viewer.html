@@ -10,6 +10,8 @@
     * { box-sizing:border-box; margin:0; padding:0; }
     html, body { height:100%; }
     body { font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; overflow:hidden; }
+    
+    /* Верхняя панель сайта */
     .topbar { display:flex; align-items:center; gap:1rem; padding:.85rem 1.25rem; background:var(--card); box-shadow:0 1px 4px rgba(0,0,0,.06); z-index:10; }
     .topbar h1 { font-size:1.1rem; font-weight:600; flex:1; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .topbar .actions { display:flex; gap:.5rem; }
@@ -18,11 +20,12 @@
     .btn-back { border-color:var(--accent); color:var(--accent); background:transparent; }
     .btn-save { background:var(--accent); color:#fff; }
     .btn-save.saved { background:#22c55e; }
-    .btn-fs { background:transparent; border-color:var(--muted, #999); color:var(--text); padding:.45rem .6rem; }
+    
+    /* Контейнер для 3D-просмотрщика */
     .viewer-container { flex:1; position:relative; overflow:hidden; min-height:0; }
-    .viewer-container canvas { display:block; }
-    .loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1rem; opacity:.6; pointer-events:none; }
-    .error { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#dc3545; text-align:center; padding:2rem; font-size:1rem; }
+    .loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1rem; opacity:.6; pointer-events:none; background:var(--bg); z-index:5; }
+    .error { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#dc3545; text-align:center; padding:2rem; font-size:1rem; background:var(--bg); z-index:5; }
+    
     @media (max-width:600px) { .topbar h1 { font-size:.95rem; } .btn { font-size:.8rem; padding:.4rem .7rem; } }
   </style>
 </head>
@@ -32,52 +35,54 @@
     <h1 id="modelTitle">Загрузка...</h1>
     <div class="actions">
       <button id="saveBtn" class="btn btn-save" style="display:none;">☆ Сохранить</button>
-      <button id="fsBtn" class="btn btn-fs" title="На весь экран">⛶</button>
     </div>
   </div>
   <div id="viewerContainer" class="viewer-container">
     <div id="loading" class="loading">Загрузка модели...</div>
   </div>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
+  <!-- 1. Подключаем библиотеку Online 3D Viewer -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/online-3d-viewer@0.14.0/build/o3dv.min.js"></script>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-
+  <script>
     const modelId = new URLSearchParams(location.search).get('id');
 
-    async function init() {
-      if (!modelId) return showError('Не указан ID модели. Вернитесь в галерею.');
+    // Инициализация после загрузки страницы
+    window.addEventListener('load', async () => {
+      if (!modelId) {
+        showError('Не указан ID модели. Вернитесь в галерею.');
+        return;
+      }
+
       let model;
       try {
-        // cache-buster: всегда свежий models.json
+        // Загружаем models.json с обходом кеша
         const res = await fetch('models.json?t=' + Date.now(), { cache: 'no-store' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const models = await res.json();
         model = models.find(m => m.id === modelId);
       } catch (e) {
         console.error(e);
-        return showError('Не удалось загрузить список моделей.');
+        showError('Не удалось загрузить список моделей.');
+        return;
       }
-      if (!model) return showError('Модель не найдена.');
+
+      if (!model) {
+        showError('Модель не найдена.');
+        return;
+      }
 
       document.title = model.title + ' — 3D';
       document.getElementById('modelTitle').textContent = model.title;
 
+      // Настраиваем кнопку "Сохранить" (избранное)
       setupSave(modelId);
-      await setup3D(model);
-    }
 
+      // Инициализируем 3D-просмотрщик
+      init3DViewer(model);
+    });
+
+    // --- Функция сохранения в избранное (localStorage) ---
     function setupSave(id) {
       const btn = document.getElementById('saveBtn');
       const KEY = 'saved_3d_models';
@@ -88,6 +93,7 @@
       let saved = JSON.parse(localStorage.getItem(KEY) || '[]');
       btn.style.display = 'inline-flex';
       update(saved.includes(id));
+      
       btn.addEventListener('click', () => {
         saved = JSON.parse(localStorage.getItem(KEY) || '[]');
         const i = saved.indexOf(id);
@@ -97,99 +103,49 @@
       });
     }
 
-    async function setup3D(model) {
-      const container = document.getElementById('viewerContainer');
-      const loadingEl = document.getElementById('loading');
+    // --- Инициализация Online 3D Viewer ---
+    function init3DViewer(model) {
+      const parentDiv = document.getElementById('viewerContainer');
+      
+      // Определяем цвета в зависимости от темы
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const bgColor = isDark ? new OV.RGBAColor(18, 18, 18, 255) : new OV.RGBAColor(248, 249, 250, 255);
+      const defaultColor = isDark ? new OV.RGBColor(200, 200, 200) : new OV.RGBColor(150, 150, 150);
 
-      const scene = new THREE.Scene();
-      const bg = getComputedStyle(document.body).backgroundColor || '#f8f9fa';
-      scene.background = new THREE.Color(bg);
-
-      const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(container.clientWidth, container.clientHeight);
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      container.appendChild(renderer.domElement);
-
-      // Свет
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.8));
-      scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-      const d1 = new THREE.DirectionalLight(0xffffff, 1.8); d1.position.set(5, 10, 7); scene.add(d1);
-      const d2 = new THREE.DirectionalLight(0xffffff, 0.8); d2.position.set(-5, -3, -5); scene.add(d2);
-
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.screenSpacePanning = true;
-
-      let object;
-      try {
-        if (model.mtl) {
-          const mtlLoader = new MTLLoader();
-          const mtl = await mtlLoader.loadAsync(model.mtl);
-          mtl.preload();
-          const objLoader = new OBJLoader();
-          objLoader.setMaterials(mtl);
-          object = await objLoader.loadAsync(model.src);
-        } else {
-          const objLoader = new OBJLoader();
-          object = await objLoader.loadAsync(model.src);
+      // Создаём экземпляр просмотрщика с нужными настройками
+      const viewer = new OV.EmbeddedViewer(parentDiv, {
+        backgroundColor: bgColor,
+        defaultColor: defaultColor,
+        // Включаем навигацию и панели (это делает интерфейс похожим на 3dviewer.net)
+        // (В некоторых версиях эти параметры могут называться иначе, но базовые панели 
+        // уже включены в EmbeddedViewer по умолчанию)
+        onModelLoaded: () => {
+          // Убираем лоадер, когда модель загружена
+          const loadingEl = document.getElementById('loading');
+          if (loadingEl) loadingEl.remove();
         }
-        scene.add(object);
-        fitCamera(object, camera, controls);
-        if (loadingEl) loadingEl.remove();
-      } catch (e) {
-        console.error(e);
-        return showError('Не удалось загрузить модель. Проверьте, что ссылки на .obj и .mtl доступны (открываются в браузере).');
-      }
-
-      const onResize = () => {
-        const w = container.clientWidth, h = container.clientHeight;
-        if (!w || !h) return;
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
-      };
-      window.addEventListener('resize', onResize);
-
-      document.getElementById('fsBtn').addEventListener('click', () => {
-        if (!document.fullscreenElement) container.requestFullscreen?.().then(() => setTimeout(onResize, 100)).catch(() => {});
-        else document.exitFullscreen?.().then(() => setTimeout(onResize, 100)).catch(() => {});
       });
 
-      (function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      })();
+      // Формируем список URL для загрузки
+      const urls = [model.src];
+      if (model.mtl) {
+        urls.push(model.mtl);
+      }
+
+      // Загружаем модель
+      viewer.LoadModelFromUrlList(urls);
+
+      // Обработка ресайза окна
+      window.addEventListener('resize', () => {
+        viewer.Resize();
+      });
     }
 
-    function fitCamera(object, camera, controls) {
-      const box = new THREE.Box3().setFromObject(object);
-      if (box.isEmpty()) return;
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z) || 1;
-      const fov = camera.fov * Math.PI / 180;
-      const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.7;
-
-      camera.position.set(center.x + dist * 0.7, center.y + dist * 0.55, center.z + dist * 0.85);
-      camera.near = Math.max(maxDim / 1000, 0.001);
-      camera.far = maxDim * 100;
-      camera.updateProjectionMatrix();
-
-      controls.target.copy(center);
-      controls.update();
-    }
-
+    // --- Показ ошибки ---
     function showError(msg) {
       const c = document.getElementById('viewerContainer');
       if (c) c.innerHTML = `<div class="error">${msg}</div>`;
     }
-
-    init();
   </script>
 </body>
 </html>
