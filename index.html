@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Моя 3D-галерея</title>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <style>
     :root { --bg:#f8f9fa; --card:#fff; --text:#212529; --accent:#0d6efd; --muted:#6c757d; --radius:16px; }
     @media (prefers-color-scheme:dark) { :root { --bg:#121212; --card:#1e1e1e; --text:#e0e0e0; --accent:#4dabf7; --muted:#999; } }
@@ -25,20 +24,14 @@
     .card-title { font-size:1.2rem; font-weight:600; margin-bottom:.25rem; }
     .card-desc { font-size:.9rem; opacity:.65; margin-bottom:1rem; flex:1; }
     .card-actions { display:flex; gap:.75rem; }
-    .btn { padding:.6rem 1.2rem; border-radius:10px; border:none; font-weight:600; font-size:.9rem; cursor:pointer; font-family:inherit; transition:opacity .2s, background .2s, color .2s; text-decoration:none; text-align:center; flex:1; }
+    .btn { padding:.6rem 1.2rem; border-radius:10px; border:none; font-weight:600; font-size:.9rem; cursor:pointer; font-family:inherit; transition:opacity .2s, background .2s, color .2s; text-decoration:none; text-align:center; flex:1; display:inline-block; }
     .btn-primary { background:var(--accent); color:#fff; }
     .btn-primary:hover { opacity:.9; }
     .btn-outline { background:transparent; border:1.5px solid var(--accent); color:var(--accent); }
     .btn-outline:hover { background:var(--accent); color:#fff; }
-    .qr-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); z-index:1000; align-items:center; justify-content:center; padding:1rem; }
-    .qr-modal.active { display:flex; }
-    .qr-modal-content { background:var(--card); padding:2rem; border-radius:var(--radius); text-align:center; max-width:360px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,.3); position:relative; }
-    .qr-modal-content canvas { margin:1rem auto; display:block; border-radius:8px; }
-    .qr-modal-content h2 { font-size:1.1rem; font-weight:600; margin-bottom:.5rem; padding-right:1.5rem; }
-    .qr-modal-content p { font-size:.8rem; opacity:.7; word-break:break-all; margin-top:.5rem; font-family:ui-monospace,monospace; }
-    .close-btn { position:absolute; top:.75rem; right:.75rem; background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text); opacity:.5; line-height:1; }
-    .close-btn:hover { opacity:1; }
     .empty { text-align:center; opacity:.5; padding:4rem 1rem; grid-column:1/-1; }
+    .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(100px); background:#22c55e; color:white; padding:10px 20px; border-radius:8px; font-weight:600; transition:transform .3s; z-index:1000; }
+    .toast.show { transform:translateX(-50%) translateY(0); }
     @media (max-width:600px) { h1 { font-size:1.75rem; } .btn-refresh { position:static; margin-top:.75rem; } }
   </style>
 </head>
@@ -50,14 +43,8 @@
   </header>
   <main id="gallery" class="gallery"></main>
 
-  <div id="qrModal" class="qr-modal">
-    <div class="qr-modal-content">
-      <button class="close-btn" id="qrClose" aria-label="Закрыть">×</button>
-      <h2 id="qrTitle">Модель</h2>
-      <canvas id="qrCanvas"></canvas>
-      <p id="qrLink"></p>
-    </div>
-  </div>
+  <!-- Всплывающее уведомление -->
+  <div id="toast" class="toast">Ссылка скопирована!</div>
 
   <script>
     const MODELS_URL = 'models.json';
@@ -91,7 +78,6 @@
       }
       
       gallery.innerHTML = models.map(model => {
-        // ИСПРАВЛЕНО: Убрано encodeURIComponent, чтобы не ломать уже закодированные ссылки
         const viewerUrl = `https://nekujay.github.io/3d/website/index.html#model=${model.src}${model.mtl ? ',' + model.mtl : ''}`;
         
         const posterHtml = model.poster
@@ -105,37 +91,30 @@
               <p class="card-desc">${escapeHtml(model.description || 'Без описания')}</p>
               <div class="card-actions">
                 <a href="${viewerUrl}" class="btn btn-primary">Смотреть</a>
-                <button class="btn btn-outline" data-url="${viewerUrl}" data-title="${escapeHtml(model.title)}">QR-код</button>
+                <button class="btn btn-outline copy-btn" data-url="${viewerUrl}">🔗 Ссылка</button>
               </div>
             </div>
           </article>`;
       }).join('');
 
-      gallery.querySelectorAll('button[data-url]').forEach(btn => {
+      // Обработчик для кнопки копирования
+      gallery.querySelectorAll('.copy-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          showQR(btn.dataset.title, btn.dataset.url);
+          navigator.clipboard.writeText(btn.dataset.url).then(() => {
+            showToast();
+          }).catch(err => {
+            console.error('Ошибка копирования: ', err);
+            alert('Не удалось скопировать. Ссылка: ' + btn.dataset.url);
+          });
         });
       });
     }
 
-    function showQR(title, url) {
-      document.getElementById('qrTitle').textContent = title;
-      document.getElementById('qrLink').textContent = url;
-      QRCode.toCanvas(document.getElementById('qrCanvas'), url, {
-        width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' }
-      }, err => { if (err) console.error(err); });
-      document.getElementById('qrModal').classList.add('active');
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
     }
-
-    document.getElementById('qrClose').addEventListener('click', () => {
-      document.getElementById('qrModal').classList.remove('active');
-    });
-    document.getElementById('qrModal').addEventListener('click', e => {
-      if (e.target.id === 'qrModal') e.currentTarget.classList.remove('active');
-    });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') document.getElementById('qrModal').classList.remove('active');
-    });
 
     document.getElementById('refreshBtn').addEventListener('click', initGallery);
     initGallery();
