@@ -91,8 +91,8 @@
       }
       
       gallery.innerHTML = models.map(model => {
-        // ФОРМИРУЕМ ССЫЛКУ НА ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК
-        const viewerUrl = `https://nekujay.github.io/3d/website/index.html#model=${encodeURIComponent(model.src)}${model.mtl ? ',' + encodeURIComponent(model.mtl) : ''}`;
+        // ИСПРАВЛЕНО: Убрано encodeURIComponent, чтобы не ломать уже закодированные ссылки
+        const viewerUrl = `https://nekujay.github.io/3d/website/index.html#model=${model.src}${model.mtl ? ',' + model.mtl : ''}`;
         
         const posterHtml = model.poster
           ? `<img class="card-poster" src="${escapeHtml(model.poster)}" alt="${escapeHtml(model.title)}" loading="lazy">`
@@ -111,7 +111,6 @@
           </article>`;
       }).join('');
 
-      // Обработчик для кнопок QR-кода
       gallery.querySelectorAll('button[data-url]').forEach(btn => {
         btn.addEventListener('click', () => {
           showQR(btn.dataset.title, btn.dataset.url);
@@ -128,7 +127,6 @@
       document.getElementById('qrModal').classList.add('active');
     }
 
-    // Закрытие модального окна QR
     document.getElementById('qrClose').addEventListener('click', () => {
       document.getElementById('qrModal').classList.remove('active');
     });
