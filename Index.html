@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Моя 3D-галерея</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    :root { --bg:#f8f9fa; --card:#fff; --text:#212529; --accent:#0d6efd; --muted:#6c757d; --radius:16px; }
+    @media (prefers-color-scheme:dark) { :root { --bg:#121212; --card:#1e1e1e; --text:#e0e0e0; --accent:#4dabf7; --muted:#999; } }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); padding:2rem 1rem; line-height:1.5; transition:background .3s, color .3s; min-height:100vh; }
+    header { max-width:1200px; margin:0 auto 2rem; text-align:center; position:relative; }
+    h1 { font-size:2.5rem; font-weight:700; letter-spacing:-.02em; margin-bottom:.35rem; }
+    .subtitle { opacity:.7; font-size:1.05rem; }
+    .btn-refresh { position:absolute; right:0; top:0; background:transparent; border:1.5px solid var(--muted); color:var(--muted); padding:.4rem .8rem; border-radius:8px; font-size:.85rem; cursor:pointer; font-family:inherit; transition:opacity .15s; }
+    .btn-refresh:hover { opacity:.7; }
+    .btn-refresh.spin { animation:spin 1s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1.5rem; max-width:1200px; margin:0 auto; }
+    .card { background:var(--card); border-radius:var(--radius); overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.06); transition:transform .2s, box-shadow .2s; display:flex; flex-direction:column; }
+    .card:hover { transform:translateY(-4px); box-shadow:0 8px 30px rgba(0,0,0,.12); }
+    .card-poster { width:100%; aspect-ratio:16/9; object-fit:cover; background:linear-gradient(135deg,#6366f1,#a855f7); display:flex; align-items:center; justify-content:center; color:#fff; font-size:3rem; font-weight:700; opacity:.9; }
+    .card-body { padding:1.25rem; flex:1; display:flex; flex-direction:column; }
+    .card-title { font-size:1.2rem; font-weight:600; margin-bottom:.25rem; }
+    .card-desc { font-size:.9rem; opacity:.65; margin-bottom:1rem; flex:1; }
+    .card-actions { display:flex; gap:.75rem; }
+    .btn { padding:.6rem 1.2rem; border-radius:10px; border:none; font-weight:600; font-size:.9rem; cursor:pointer; font-family:inherit; transition:opacity .2s, background .2s, color .2s; text-decoration:none; text-align:center; flex:1; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover { opacity:.9; }
+    .btn-outline { background:transparent; border:1.5px solid var(--accent); color:var(--accent); }
+    .btn-outline:hover { background:var(--accent); color:#fff; }
+    .qr-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); z-index:1000; align-items:center; justify-content:center; padding:1rem; }
+    .qr-modal.active { display:flex; }
+    .qr-modal-content { background:var(--card); padding:2rem; border-radius:var(--radius); text-align:center; max-width:360px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,.3); position:relative; }
+    .qr-modal-content canvas { margin:1rem auto; display:block; border-radius:8px; }
+    .qr-modal-content h2 { font-size:1.1rem; font-weight:600; margin-bottom:.5rem; padding-right:1.5rem; }
+    .qr-modal-content p { font-size:.8rem; opacity:.7; word-break:break-all; margin-top:.5rem; font-family:ui-monospace,monospace; }
+    .close-btn { position:absolute; top:.75rem; right:.75rem; background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text); opacity:.5; line-height:1; }
+    .close-btn:hover { opacity:1; }
+    .empty { text-align:center; opacity:.5; padding:4rem 1rem; grid-column:1/-1; }
+    @media (max-width:600px) { h1 { font-size:1.75rem; } .btn-refresh { position:static; margin-top:.75rem; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>3D-Галерея</h1>
+    <p class="subtitle">Интерактивные модели в вашем браузере</p>
+    <button class="btn-refresh" id="refreshBtn" title="Перезагрузить список">↻</button>
+  </header>
+  <main id="gallery" class="gallery"></main>
+
+  <div id="qrModal" class="qr-modal">
+    <div class="qr-modal-content">
+      <button class="close-btn" id="qrClose" aria-label="Закрыть">×</button>
+      <h2 id="qrTitle">Модель</h2>
+      <canvas id="qrCanvas"></canvas>
+      <p id="qrLink"></p>
+    </div>
+  </div>
+
+  <script>
+    const MODELS_URL = 'models.json';
+    const VIEWER_PAGE = 'viewer.html';
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function initGallery() {
+      const gallery = document.getElementById('gallery');
+      const btn = document.getElementById('refreshBtn');
+      btn.classList.add('spin');
+      try {
+        // cache-buster: всегда свежий models.json
+        const response = await fetch(MODELS_URL + '?t=' + Date.now(), { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const models = await response.json();
+        renderGallery(models);
+      } catch (err) {
+        console.error(err);
+        gallery.innerHTML = `<p class="empty">Не удалось загрузить галерею.<br><small>Проверьте models.json и его доступность.</small></p>`;
+      } finally {
+        btn.classList.remove('spin');
+      }
+    }
+
+    function renderGallery(models) {
+      const gallery = document.getElementById('gallery');
+      if (!models.length) {
+        gallery.innerHTML = `<p class="empty">Пока нет добавленных моделей</p>`;
+        return;
+      }
+      gallery.innerHTML = models.map(model => {
+        const viewerUrl = `${VIEWER_PAGE}?id=${encodeURIComponent(model.id)}`;
+        const posterHtml = model.poster
+          ? `<img class="card-poster" src="${escapeHtml(model.poster)}" alt="${escapeHtml(model.title)}" loading="lazy">`
+          : `<div class="card-poster">${escapeHtml(model.title.charAt(0))}</div>`;
+        return `
+          <article class="card">
+            ${posterHtml}
+            <div class="card-body">
+              <h2 class="card-title">${escapeHtml(model.title)}</h2>
+              <p class="card-desc">${escapeHtml(model.description || 'Без описания')}</p>
+              <div class="card-actions">
+                <a href="${viewerUrl}" class="btn btn-primary">Смотреть</a>
+                <button class="btn btn-outline" data-id="${escapeHtml(model.id)}" data-title="${escapeHtml(model.title)}">QR-код</button>
+              </div>
+            </div>
+          </article>`;
+      }).join('');
+
+      gallery.querySelectorAll('button[data-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const url = `${VIEWER_PAGE}?id=${encodeURIComponent(btn.dataset.id)}`;
+          showQR(btn.dataset.title, url);
+        });
+      });
+    }
+
+    function showQR(title, url) {
+      const fullUrl = new URL(url, location.href).href;
+      document.getElementById('qrTitle').textContent = title;
+      document.getElementById('qrLink').textContent = fullUrl;
+      QRCode.toCanvas(document.getElementById('qrCanvas'), fullUrl, {
+        width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' }
+      }, err => { if (err) console.error(err); });
+      document.getElementById('qrModal').classList.add('active');
+    }
+
+    document.getElementById('qrClose').addEventListener('click', () => {
+      document.getElementById('qrModal').classList.remove('active');
+    });
+    document.getElementById('qrModal').addEventListener('click', e => {
+      if (e.target.id === 'qrModal') e.currentTarget.classList.remove('active');
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.getElementById('qrModal').classList.remove('active');
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', initGallery);
+    initGallery();
+  </script>
+</body>
+</html>
