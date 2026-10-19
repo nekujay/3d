@@ -20,7 +20,7 @@
     details.panel > summary::-webkit-details-marker { display:none; }
     .panel-body { margin-top:1rem; }
     label { display:block; font-size:.85rem; opacity:.8; margin-bottom:.4rem; font-weight:500; }
-    input[type=text], input[type=password], textarea, select { width:100%; padding:.55rem .75rem; border:1.5px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:.9rem; font-family:inherit; margin-bottom:.85rem; transition:border-color .15s; }
+    input[type=text], input[type=password], textarea { width:100%; padding:.55rem .75rem; border:1.5px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:.9rem; font-family:inherit; margin-bottom:.85rem; transition:border-color .15s; }
     input:focus, textarea:focus { outline:none; border-color:var(--accent); }
     textarea { resize:vertical; }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 1rem; }
@@ -65,7 +65,7 @@
 <body>
   <div class="wrap">
     <h1>⚙️ Управление 3D-галереей</h1>
-    <p class="sub">Добавляйте модели перетаскиванием или по ссылке — галерея обновится автоматически</p>
+    <p class="sub">Добавляйте модели перетаскиванием или по ссылке</p>
 
     <details class="panel" id="settingsPanel">
       <summary>🔑 Подключение к GitHub</summary>
@@ -80,7 +80,6 @@
           <button class="btn btn-primary" id="saveCfgBtn">Проверить и сохранить</button>
           <span id="cfgStatus" class="status"></span>
         </div>
-        <p class="hint">Токен создаётся на <b>github.com/settings/tokens?type=beta</b> с правом <b>Contents: Read and write</b> для этого репозитория. Хранится только в этом браузере.</p>
       </div>
     </details>
 
@@ -184,6 +183,7 @@
         }
       });
     }
+    
     async function loadModels() {
       const res = await ghApi(`/contents/models.json?ref=${cfg.branch}`);
       if (res.status === 404) { currentModels = []; currentSha = null; return; }
@@ -192,6 +192,8 @@
       currentModels = JSON.parse(b64decodeUtf8(data.content));
       currentSha = data.sha;
     }
+
+    // ИСПРАВЛЕННАЯ ФУНКЦИЯ С АВТО-ПОВТОРОМ
     async function saveModels(message) {
       const body = {
         message,
@@ -199,11 +201,25 @@
         branch: cfg.branch
       };
       if (currentSha) body.sha = currentSha;
-      const res = await ghApi('/contents/models.json', {
+
+      let res = await ghApi('/contents/models.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+
+      // Если случился конфликт версий (409), перезагружаем и пробуем снова
+      if (res.status === 409) {
+        console.warn('Конфликт версий. Получаем свежий SHA...');
+        await loadModels(); 
+        body.sha = currentSha;
+        res = await ghApi('/contents/models.json', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
+
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || 'Ошибка сохранения models.json');
@@ -211,6 +227,7 @@
       const result = await res.json();
       currentSha = result.content.sha;
     }
+
     async function uploadBinary(path, file) {
       if (file.size > 90 * 1024 * 1024) throw new Error(`${file.name}: >90 МБ — слишком большой для GitHub Contents API`);
       const content = await fileToBase64(file);
@@ -226,6 +243,7 @@
       });
       if (!res.ok) { const err = await res.json(); throw new Error(`${file.name}: ${err.message}`); }
     }
+
     async function uploadText(path, text) {
       let sha;
       const check = await ghApi(`/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${cfg.branch}`);
@@ -264,7 +282,7 @@
         const res = await ghApi('');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const repo = await res.json();
-        if (!repo.permissions || !repo.permissions.push) throw new Error('У токена нет прав на запись (Contents: RW)');
+        if (!repo.permissions || !repo.permissions.push) throw new Error('У токена нет прав на запись');
         el.textContent = `✓ ${repo.full_name}`;
         el.className = 'status ok';
         document.getElementById('settingsPanel').open = false;
@@ -337,7 +355,6 @@
           if (mtlFile) {
             st.textContent = 'Обработка .mtl...';
             let mtlText = await mtlFile.file.text();
-            // переписываем ссылки на текстуры в абсолютные URL
             mtlText = mtlText.replace(/^(\s*(?:map_\w+|bump|disp|refl|decal|norm)\s+)(.+)$/gm,
               (line, prefix, filepath) => {
                 const basename = filepath.split(/[\/\\]/).pop().trim();
@@ -398,34 +415,33 @@
               <div class="model-id">${escapeHtml(m.id)}</div>
             </div>
             <div class="actions">
-              <a class="btn btn-sm" href="https://${cfg.owner}.github.io/${cfg.repo}/viewer.html?id=${encodeURIComponent(m.id)}" target="_blank">👁</a>
-              <button class="btn btn-sm" onclick="copyLink('${escapeHtml(m.id)}')">🔗</button>
-              <button class="btn btn-sm" onclick="editModel(${i})">✎</button>
-              <button class="btn btn-sm btn-danger" onclick="deleteModel(${i})">🗑</button>
+              <a class="btn btn-sm" href="https://${cfg.owner}.github.io/${cfg.repo}/website/index.html#model=${m.src}${m.mtl ? ',' + m.mtl : ''}" target="_blank" title="Открыть">👁</a>
+              <button class="btn btn-sm" onclick="copyLink('${escapeHtml(m.id)}', '${m.src}', '${m.mtl || ''}')" title="Скопировать ссылку">🔗</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteModel(${i})" title="Удалить из галереи">🗑</button>
             </div>
           </div>`).join('');
       } catch(e) {
         box.innerHTML = `<p class="err">${e.message}</p>`;
       }
     }
-    window.copyLink = (id) => {
-      const url = `https://${cfg.owner}.github.io/${cfg.repo}/viewer.html?id=${encodeURIComponent(id)}`;
+
+    window.copyLink = (id, src, mtl) => {
+      const url = `https://${cfg.owner}.github.io/${cfg.repo}/website/index.html#model=${src}${mtl ? ',' + mtl : ''}`;
       navigator.clipboard.writeText(url).then(() => toast('Ссылка скопирована'));
     };
+
     window.deleteModel = async (i) => {
       const m = currentModels[i];
-      if (!confirm(`Удалить «${m.title}» из галереи? (файлы останутся на GitHub)`)) return;
+      if (!confirm(`Удалить «${m.title}» из списка галереи? (Файлы на GitHub останутся)`)) return;
       currentModels.splice(i, 1);
-      try { await saveModels(`remove: ${m.title}`); toast('Удалено'); await refreshModelList(); }
-      catch(e) { toast(e.message, true); }
-    };
-    window.editModel = async (i) => {
-      const m = currentModels[i];
-      const title = prompt('Название:', m.title); if (title === null) return;
-      const description = prompt('Описание:', m.description || ''); if (description === null) return;
-      currentModels[i] = { ...m, title, description };
-      try { await saveModels(`edit: ${title}`); toast('Обновлено'); await refreshModelList(); }
-      catch(e) { toast(e.message, true); }
+      try { 
+        await saveModels(`remove: ${m.title}`); 
+        toast('Удалено из галереи'); 
+        await refreshModelList(); 
+      }
+      catch(e) { 
+        toast(e.message, true); 
+      }
     };
 
     // --- Init ---
