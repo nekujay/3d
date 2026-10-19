@@ -5,5 +5,12 @@
     "description": "",
     "src": "https://nekujay.github.io/3d/models/bzel36erk/bzel36erk.obj",
     "mtl": "https://nekujay.github.io/3d/models/bzel36erk/bzel36erk.mtl"
+  },
+  {
+    "id": "bzel36erk2",
+    "title": "bzel36erk2",
+    "description": "",
+    "src": "https://nekujay.github.io/3d/models/bzel36erk2/bzel36erk.obj",
+    "mtl": "https://nekujay.github.io/3d/models/bzel36erk2/bzel36erk.mtl"
   }
 ]
