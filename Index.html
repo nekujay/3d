@@ -61,7 +61,6 @@
 
   <script>
     const MODELS_URL = 'models.json';
-    const VIEWER_PAGE = 'viewer.html';
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -72,7 +71,6 @@
       const btn = document.getElementById('refreshBtn');
       btn.classList.add('spin');
       try {
-        // cache-buster: всегда свежий models.json
         const response = await fetch(MODELS_URL + '?t=' + Date.now(), { cache: 'no-store' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const models = await response.json();
@@ -91,8 +89,11 @@
         gallery.innerHTML = `<p class="empty">Пока нет добавленных моделей</p>`;
         return;
       }
+      
       gallery.innerHTML = models.map(model => {
-        const viewerUrl = `${VIEWER_PAGE}?id=${encodeURIComponent(model.id)}`;
+        // ФОРМИРУЕМ ССЫЛКУ НА ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК
+        const viewerUrl = `https://nekujay.github.io/3d/website/index.html#model=${encodeURIComponent(model.src)}${model.mtl ? ',' + encodeURIComponent(model.mtl) : ''}`;
+        
         const posterHtml = model.poster
           ? `<img class="card-poster" src="${escapeHtml(model.poster)}" alt="${escapeHtml(model.title)}" loading="lazy">`
           : `<div class="card-poster">${escapeHtml(model.title.charAt(0))}</div>`;
@@ -104,30 +105,30 @@
               <p class="card-desc">${escapeHtml(model.description || 'Без описания')}</p>
               <div class="card-actions">
                 <a href="${viewerUrl}" class="btn btn-primary">Смотреть</a>
-                <button class="btn btn-outline" data-id="${escapeHtml(model.id)}" data-title="${escapeHtml(model.title)}">QR-код</button>
+                <button class="btn btn-outline" data-url="${viewerUrl}" data-title="${escapeHtml(model.title)}">QR-код</button>
               </div>
             </div>
           </article>`;
       }).join('');
 
-      gallery.querySelectorAll('button[data-id]').forEach(btn => {
+      // Обработчик для кнопок QR-кода
+      gallery.querySelectorAll('button[data-url]').forEach(btn => {
         btn.addEventListener('click', () => {
-          const url = `${VIEWER_PAGE}?id=${encodeURIComponent(btn.dataset.id)}`;
-          showQR(btn.dataset.title, url);
+          showQR(btn.dataset.title, btn.dataset.url);
         });
       });
     }
 
     function showQR(title, url) {
-      const fullUrl = new URL(url, location.href).href;
       document.getElementById('qrTitle').textContent = title;
-      document.getElementById('qrLink').textContent = fullUrl;
-      QRCode.toCanvas(document.getElementById('qrCanvas'), fullUrl, {
+      document.getElementById('qrLink').textContent = url;
+      QRCode.toCanvas(document.getElementById('qrCanvas'), url, {
         width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' }
       }, err => { if (err) console.error(err); });
       document.getElementById('qrModal').classList.add('active');
     }
 
+    // Закрытие модального окна QR
     document.getElementById('qrClose').addEventListener('click', () => {
       document.getElementById('qrModal').classList.remove('active');
     });
